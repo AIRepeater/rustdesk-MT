@@ -651,6 +651,7 @@ fn run(vs: VideoService) -> ResultType<()> {
     let mut repeat_encode_counter = 0;
     let repeat_encode_max = 10;
     let mut encode_fail_counter = 0;
+    let mut encode_no_frame_counter = 0;
     let mut first_frame = true;
     let capture_width = c.width;
     let capture_height = c.height;
@@ -781,6 +782,7 @@ fn run(vs: VideoService) -> ResultType<()> {
                         &mut encoder,
                         recorder.clone(),
                         &mut encode_fail_counter,
+                        &mut encode_no_frame_counter,
                         &mut first_frame,
                         capture_width,
                         capture_height,
@@ -840,6 +842,7 @@ fn run(vs: VideoService) -> ResultType<()> {
                             &mut encoder,
                             recorder.clone(),
                             &mut encode_fail_counter,
+                            &mut encode_no_frame_counter,
                             &mut first_frame,
                             capture_width,
                             capture_height,
@@ -1142,10 +1145,12 @@ fn handle_one_frame(
     encoder: &mut Encoder,
     recorder: Arc<Mutex<Option<Recorder>>>,
     encode_fail_counter: &mut usize,
+    encode_no_frame_counter: &mut usize,
     first_frame: &mut bool,
     width: usize,
     height: usize,
 ) -> ResultType<HashSet<i32>> {
+    const MAX_ENCODE_NO_FRAME_TIMES: usize = 30;
     sp.snapshot(|sps| {
         // so that new sub and old sub share the same encoder after switch
         if sps.has_subscribes() {
@@ -1161,6 +1166,7 @@ fn handle_one_frame(
     match encoder.encode_to_message(frame, ms) {
         Ok(mut vf) => {
             *encode_fail_counter = 0;
+            *encode_no_frame_counter = 0;
             vf.display = display as _;
             let mut msg = Message::new();
             msg.set_video_frame(vf);
@@ -1174,7 +1180,10 @@ fn handle_one_frame(
         Err(e) => {
             match e.to_string().as_str() {
                 scrap::codec::ENCODE_NO_FRAME => {
-                    return Ok(send_conn_ids);
+                    *encode_no_frame_counter += 1;
+                    if *encode_no_frame_counter < MAX_ENCODE_NO_FRAME_TIMES {
+                        return Ok(send_conn_ids);
+                    }
                 }
                 scrap::codec::ENCODE_NEED_SWITCH => {
                     encoder.disable();

@@ -120,7 +120,7 @@ impl EncoderApi for VRamEncoder {
                     });
                 }
             }
-            Err(-2) => {
+            Err(hwcodec::vram::ENCODE_RETRY_LATER) => {
                 return Err(anyhow!(crate::codec::ENCODE_NO_FRAME));
             }
             Err(e) => {
